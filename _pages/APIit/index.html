@@ -1,0 +1,204 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator/4.9.3/js/tabulator.min.js"
+        integrity="sha512-N/WbW5rCM/O+/QpzuqYXkInRdSfFu6txbJcbQioBywGXDiF1XCJY2LXVKIGjNFUMS4P79mtf9pDu5ViXaa+BnA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabulator/4.9.3/css/tabulator.min.css"
+      integrity="sha512-qXb7/N44R94029hvbV06tyEl1P3TCwCbyPsIUl61D6W8mRCFbCPsRYOVJbCUaEzlwUvg7JJSLsglThYs7zNoZw=="
+      crossorigin="anonymous" referrerpolicy="no-referrer"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.min.js"
+        integrity="sha512-WaHZ16+n6qSSVxDii8MZGmFlnro3iZdJa/hb1XKraoMx1/HVILhLdAX22ypk4lT/8+t4XMYcjzCDwfvZ1CAJgw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.1/papaparse.min.js"
+        integrity="sha512-EbdJQSugx0nVWrtyK3JdQQ/03mS3Q1UiAhRtErbwl1YL/+e2hZdlIcSURxxh7WXHTzn83sjlh2rysACoJGfb6g=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="jsonTree.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<link rel="stylesheet" href="jsonTree.css" crossorigin="anonymous" referrerpolicy="no-referrer"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jmespath/0.15.0/jmespath.min.js" integrity="sha512-shzDRrGBhfF7cCNDUnk05SJu1JXpxfTPImkFfj2PJ6bNgf19EaG89nzGXP3ktu4dupm+zXimKqJx93/m+3coqQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<style type="text/css">
+    #url {
+        width: 100%;
+    }
+    #resp_col td, #header td {
+        border: 1px solid black;
+    }
+</style>
+
+<select id="method">
+    <option>GET</option>
+    <option>POST</option>
+    <option>PUT</option>
+    <option>PATCH</option>
+    <option>DELETE</option>
+    <option>HEAD</option>
+    <option>CONNECT</option>
+    <option>OPTIONS</option>
+    <option>TRACE</option>
+</select>
+<input id="url" type="url" value="https://www.example.com/#{email}"/>
+<input type="submit" onclick="sendrequest()"/>
+<textarea id="body"></textarea>
+<table>
+    <thead>
+    <tr>
+        <td>Header Name</td>
+        <td>Header Value</td>
+    </tr>
+    </thead>
+    <tbody id="header">
+    <tr name="header">
+        <td name="header_key" contenteditable="true"/>
+        <td name="header_value" contenteditable="true"/>
+    </tr>
+    </tbody>
+</table>
+<button onclick="add_row(headertemplate,'header')">+</button>
+<div>
+
+
+</div>
+<table>
+    <thead>
+    <tr>
+        <td>Column Name</td>
+        <td>JMESPath</td>
+    </tr>
+    </thead>
+    <tbody id="resp_col">
+    <tr name="resp_col">
+        <td name="colname" contenteditable="true"/>
+        <td name="colget" contenteditable="true"/>
+    </tr>
+    </tbody>
+</table>
+<button onclick="add_row(respcoltemplate,'resp_col')">+</button>
+<input type="file" oninput="loadfile(this)"/>
+<div id="datalist"></div>
+<select id="export" oninput="exportdata(this)">
+    <option selected value="">EXPORT</option>
+    <option value="csv">CSV</option>
+    <option value="xlsx">EXCEL</option>
+</select>
+
+<script type="application/javascript">
+    const respcoltemplate = document.getElementsByName("resp_col").item(0).cloneNode(true);
+    const headertemplate = document.getElementsByName("header").item(0).cloneNode(true);
+    let table;
+// Add a row to the table that's specified by "name". The template is a copy of the original row node/element.
+    function add_row(template,name) {
+        const nodelist = document.getElementsByName(name);
+        nodelist.item(nodelist.length - 1).after(template.cloneNode(true));
+    }
+
+    /**
+     * export data from the Tabulator table
+     * @param input is the format to export as
+     */
+    function exportdata(input) {
+        if (input.value === "") return;
+        table.download(input.value, "APIit." + input.value, {sheetName: "APIit"}, "visible");
+        input.value = "";
+    }
+
+    /**
+     * sends the API request
+     * @param method {string} http request method
+     * @param header {Headers} http request header
+     * @param body {string} request body
+     * @param url {string} request url
+     * @returns {Promise<any>} returns json object which is parsed from the response text
+     */
+    async function makerequest(method, header, body, url) {
+        let init;
+        if (method == "GET" || method == "HEAD") init = {method: method, headers: header};
+        else {
+            init = {method: method, body: body, headers: header};
+        }
+
+        return await (await fetch(url, init)).json(); // TODO add condition based on Content-Type header
+    }
+
+    /**
+     * prepares the request based on the users' input before handing it off to the makerequest function
+     * @returns {Promise<void>}
+     */
+    async function sendrequest() {
+        const delay = 300;
+        const method = document.getElementById("method").value;
+        let urltemplate = document.getElementById("url").value;
+        let bodytemplate = document.getElementById("body").value;
+        const header = new Headers();
+        //header.set('Authorization','')
+        header.set('Content-Type', 'application/json');
+        //gets header table rows and iterates through them
+        for (const row of document.getElementById("header").rows) {
+            //if both cells aren't empty, add items to Headers, first cell is key : second cell is value
+            if (row.cells[0].innerText && row.cells[1].innerText) {
+                header.set(row.cells[0].innerText, row.cells[1].innerText);
+            }
+        }
+
+        const resp_cols = {};
+
+        //for every row of the rows created by user,
+        // assign value entered by user in right column to the member of resp_cols object that is the key provided in left column
+        for (const row of document.getElementById("resp_col").rows) {
+            resp_cols[row.cells[0].innerText] = row.cells[1].innerText;
+        }
+
+        if (table) {
+            //Gets a field name from every column object from the table -> a list of field names is assigned to variable fields
+            const fields = table.getColumnDefinitions().map(col => col['field']);
+
+            //For every column/key in the resp_cols object, if there isn't a column already named after a key, add it to the table with its key being the title
+            for (const column of Object.keys(resp_cols)) {
+                //field is the identifier - different from column so we don't accidentally overwrite and lose the responses in that column
+                if (!fields.includes(column)) {
+                    table.addColumn({title: column, field: column}, false, table.getColumns().slice(-1)[0]);
+                }
+            }
+            // loop over each row of the table
+            for (let a = 0; a < table.getDataCount(); a++) { // TODO check getDatacount returns the filtered counts
+                let row = table.getRowFromPosition(a, true); // get row object from filtered table
+                // replace template placeholders with their table respective url encoded value
+                const url = urltemplate.replaceAll(/#\{(\w+)\}/g, (match, column) => encodeURIComponent(String(row.getCell(column).getValue()).trim()));
+                let body;
+                // if method is neither GET nor HEAD, replace template placeholders with their table respective body value
+                if (method !== "GET" && method !== "HEAD") {
+                    body = bodytemplate.replaceAll(/#\{(\w+)\}/g, (match, column) => row.getCell(column).getValue().trim());
+                }
+                const json = await makerequest(method, header, body, url);
+                const row_vals = {}; // {} is an empty generic object
+                // array unpacking: for each key:value pair in resp_cols unpack pair into column and query variable
+                for (const [column, query] of Object.entries(resp_cols)) {
+                    // if the array doesn't include the column name, then search in the returned json using the user's jmespath query and assign that to row_vals[column]
+                    if (!fields.includes(column)) {
+                        row_vals[column] = jmespath.search(json, query);
+                    }
+                }
+                row.update(row_vals);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        } else {
+            const json = await makerequest(method, header, bodytemplate, urltemplate);
+            table = new Tabulator("#datalist", {
+                data: json.data, //assign data to table
+                autoColumns: true, //create columns from data field names
+            });
+        }
+    }
+
+    function loadfile(input) {
+        const file = input.files[0];
+        Papa.parse(file, {
+            complete: function (results, file) {
+                table = new Tabulator("#datalist", {
+                    data: results.data, //assign data to table
+                    autoColumns: true, //create columns from data field names
+                });
+            },
+            header: true,
+            skipEmptyLines: true,
+        });
+    }
+</script>
+
