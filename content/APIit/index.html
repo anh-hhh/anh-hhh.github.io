@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="jsonTree.css" crossorigin="anonymous" referrerpolicy="no-referrer"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jmespath/0.15.0/jmespath.min.js" integrity="sha512-shzDRrGBhfF7cCNDUnk05SJu1JXpxfTPImkFfj2PJ6bNgf19EaG89nzGXP3ktu4dupm+zXimKqJx93/m+3coqQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<style type="text/css">
+<style>
     #url {
         width: 100%;
     }
@@ -45,18 +45,24 @@
     </tr>
     </thead>
     <tbody id="header">
+    <tr>
+        <td>Accept</td>
+        <td><select id="content_type" onchange="document.getElementById('json_fields').hidden=this.value==='text/plain'">
+            <option value="application/json">JSON</option>
+            <option value="text/plain">Text</option>
+        </select></td>
+    </tr>
     <tr name="header">
         <td name="header_key" contenteditable="true"/>
         <td name="header_value" contenteditable="true"/>
     </tr>
     </tbody>
+    <tfoot>
+    <tr><td><button onclick="add_row(headertemplate,'header')">+</button></td></tr>
+    </tfoot>
 </table>
-<button onclick="add_row(headertemplate,'header')">+</button>
-<div>
-
-
-</div>
-<table>
+<div id="response"></div>
+<table id="json_fields">
     <thead>
     <tr>
         <td>Column Name</td>
@@ -69,8 +75,10 @@
         <td name="colget" contenteditable="true"/>
     </tr>
     </tbody>
+    <tfoot>
+        <tr><td><button onclick="add_row(respcoltemplate,'resp_col')">+</button></td></tr>
+    </tfoot>
 </table>
-<button onclick="add_row(respcoltemplate,'resp_col')">+</button>
 <input type="file" oninput="loadfile(this)"/>
 <div id="datalist"></div>
 <select id="export" oninput="exportdata(this)">
@@ -109,12 +117,10 @@
      */
     async function makerequest(method, header, body, url) {
         let init;
-        if (method == "GET" || method == "HEAD") init = {method: method, headers: header};
-        else {
-            init = {method: method, body: body, headers: header};
-        }
-
-        return await (await fetch(url, init)).json(); // TODO add condition based on Content-Type header
+        if (method == 'GET' || method == 'HEAD') init = {method: method, headers: header};
+        else init = {method: method, body: body, headers: header};
+        if (header.get('Accept')==='application/json') return await (await fetch(url, init)).json(); // TODO add condition based on Content-Type header
+        else return await (await fetch(url, init)).text();
     }
 
     /**
@@ -127,8 +133,11 @@
         let urltemplate = document.getElementById("url").value;
         let bodytemplate = document.getElementById("body").value;
         const header = new Headers();
-        //header.set('Authorization','')
-        header.set('Content-Type', 'application/json');
+        const is_json = document.getElementById("content_type").value==='application/json';
+        document.getElementById("response").innerText="";
+        // TODO header.set('Authorization','')
+        header.set('Content-Type', 'application/json'); // TODO allows users to specify the type of content in the request body
+        header.set('Accept', document.getElementById("content_type").value);
         //gets header table rows and iterates through them
         for (const row of document.getElementById("header").rows) {
             //if both cells aren't empty, add items to Headers, first cell is key : second cell is value
@@ -137,18 +146,19 @@
             }
         }
 
-        const resp_cols = {};
-
-        //for every row of the rows created by user,
-        // assign value entered by user in right column to the member of resp_cols object that is the key provided in left column
-        for (const row of document.getElementById("resp_col").rows) {
-            resp_cols[row.cells[0].innerText] = row.cells[1].innerText;
-        }
-
         if (table) {
             //Gets a field name from every column object from the table -> a list of field names is assigned to variable fields
             const fields = table.getColumnDefinitions().map(col => col['field']);
+            const resp_cols = {};  // new Object();
 
+            //for every row of the rows created by user,
+            // assign value entered by user in right column to the member of resp_cols object that is the key provided in left column
+            if (is_json) {
+                for (const row of document.getElementById("resp_col").rows) {
+                    resp_cols[row.cells[0].innerText] = row.cells[1].innerText;
+                }
+            }
+            else resp_cols['response'+fields.length] = null;
             //For every column/key in the resp_cols object, if there isn't a column already named after a key, add it to the table with its key being the title
             for (const column of Object.keys(resp_cols)) {
                 //field is the identifier - different from column so we don't accidentally overwrite and lose the responses in that column
@@ -166,31 +176,45 @@
                 if (method !== "GET" && method !== "HEAD") {
                     body = bodytemplate.replaceAll(/#\{(\w+)\}/g, (match, column) => row.getCell(column).getValue().trim());
                 }
-                const json = await makerequest(method, header, body, url);
+                const data = await makerequest(method, header, body, url);
                 const row_vals = {}; // {} is an empty generic object
-                // array unpacking: for each key:value pair in resp_cols unpack pair into column and query variable
-                for (const [column, query] of Object.entries(resp_cols)) {
-                    // if the array doesn't include the column name, then search in the returned json using the user's jmespath query and assign that to row_vals[column]
-                    if (!fields.includes(column)) {
-                        row_vals[column] = jmespath.search(json, query);
+                if (is_json) {
+                    // array unpacking: for each key:value pair in resp_cols unpack pair into column and query variable
+                    for (const [column, query] of Object.entries(resp_cols)) {
+                        // if the array doesn't include the column name, then search in the returned json using the user's jmespath query and assign that to row_vals[column]
+                        if (!fields.includes(column)) {
+                            row_vals[column] = jmespath.search(json, query);
+                        }
                     }
                 }
+                else row_vals['response'] = data;
+                // row_vals is an object containing key:value pairs. field (think A B C D in excel - not column name) matched with the corresponding key gets its cell updated with the corresponding value
                 row.update(row_vals);
+                // setTimeout calls resolve (variable which points to a function) to resolve the Promise after executing and waiting for the delay. await waits for the Promise to resolve before resuming the loop
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
-        } else {
-            const json = await makerequest(method, header, bodytemplate, urltemplate);
-            table = new Tabulator("#datalist", {
-                data: json.data, //assign data to table
-                autoColumns: true, //create columns from data field names
-            });
+        }
+        else { // if there is no table, make a single request
+            const data = await makerequest(method, header, bodytemplate, urltemplate);
+            // then create a new table and put the response values in
+            if (is_json) {
+                table = new Tabulator("#datalist", {
+                    data: data.data, //assign data to table
+                    autoColumns: true, //create columns from data field names
+                });
+            }
+            else document.getElementById("response").innerText=data;
         }
     }
 
+    /**
+     * takes file uploaded from users' computer
+     * @param input file input element
+     */
     function loadfile(input) {
-        const file = input.files[0];
-        Papa.parse(file, {
-            complete: function (results, file) {
+        const file = input.files[0];  // get first selected File object representing file; files is a member of file input element
+        Papa.parse(file, { // parse function takes file and the object below
+            complete: function (results, file) { // function gets called when parsing is complete
                 table = new Tabulator("#datalist", {
                     data: results.data, //assign data to table
                     autoColumns: true, //create columns from data field names
