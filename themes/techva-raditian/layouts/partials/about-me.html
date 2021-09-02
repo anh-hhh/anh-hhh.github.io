@@ -12,13 +12,15 @@
         </div>
       </div>
       <div class="col-12 col-md-7 pl-md-0 text-right">
-        <img
-          class='lozad img-responsive image-frame-500'
-          src="data:image/gif;base64,R0lGODlhBwACAIAAAP///wAAACH5BAEAAAEALAAAAAAHAAIAAAIDjI9YADs="
-          data-src="{{ $headless.Params.image.x | absURL }}"
-          data-srcset="{{ $headless.Params.image.x | absURL }} 1x, {{ $headless.Params.image._2x | absURL }} 2x"
-          alt="{{ $headless.Params.title }}"
-        />
+        <div class="image-frame-responsive">
+          <img
+            class='lozad img-responsive p-md-5'
+            src="data:image/gif;base64,R0lGODlhBwACAIAAAP///wAAACH5BAEAAAEALAAAAAAHAAIAAAIDjI9YADs="
+            data-src="{{ $headless.Params.image.x | absURL }}"
+            data-srcset="{{ $headless.Params.image.x | absURL }} 1x, {{ $headless.Params.image._2x | absURL }} 2x"
+            alt="{{ $headless.Params.title }}"
+          />
+        </div>
       </div>
     </div>
   </div>
