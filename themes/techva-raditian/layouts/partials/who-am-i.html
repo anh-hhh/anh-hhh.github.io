@@ -1,0 +1,27 @@
+{{ $headless := .Site.GetPage "/who-am-i" }}
+{{ if $headless }}
+<section class="section rad-animation-group" id="who-am-i">
+  <div class="container rad-fade-down">
+    <div class="row d-flex flex-column-reverse flex-md-row">
+      <div class="col-12 col-md-4 d-flex align-items-center">
+        <div class="image-frame-responsive">
+          <img
+            class="lozad img-responsive"
+            data-src="{{ $headless.Params.image.x | absURL }}"
+            data-srcset="{{ $headless.Params.image.x | absURL }} 1x, {{ $headless.Params.image._2x | absURL }} 2x"
+            alt="Profile Picture"
+          />
+        </div>
+      </div>
+      <div class="col-12 col-md-8 d-flex flex-column justify-content-center">
+        <h3>{{ $headless.Params.title }}</h2>
+        <div class="lead">
+          <p>
+            {{ $headless.Content }}
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{{ end }}
