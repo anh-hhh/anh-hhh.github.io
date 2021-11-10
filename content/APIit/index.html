@@ -18,11 +18,19 @@
     #url {
         width: 100%;
     }
-    #resp_col td, #header td {
+    #resp_col td, #header td, #cookie td {
         border: 1px solid black;
     }
 </style>
 
+<datalist id="templates">
+</datalist>
+<datalist id="mime-types">
+    <option value="application/json">JSON</option>
+    <option value="text/plain">Text</option>
+</datalist>
+
+<label>Request Method
 <select id="method">
     <option>GET</option>
     <option>POST</option>
@@ -34,9 +42,14 @@
     <option>OPTIONS</option>
     <option>TRACE</option>
 </select>
-<input id="url" type="url" value="https://www.example.com/#{email}"/>
+</label>
+<label>URL<input id="url" type="url" list="templates" placeholder="https://www.example.com/#{email}"/></label>
 <input type="submit" onclick="sendrequest()"/>
-<textarea id="body"></textarea>
+<fieldset id="content-type">
+    <label>JSON<input name="content-type" type="radio" value="application/json" checked/></label>
+    <label>Text<input name="content-type" type="radio" value="text/plain"/></label>
+</fieldset>
+<label>Request Body<textarea id="body" placeholder="Optional body to include in request"></textarea></label>
 <table>
     <thead>
     <tr>
@@ -46,19 +59,61 @@
     </thead>
     <tbody id="header">
     <tr>
+        <td>Authorization</td>
+        <td><select id="auth_scheme" onchange="Array.from(document.getElementsByClassName('auth_field')).forEach(e=>e.hidden=this.selectedOptions[0].dataset.input!==e.dataset.input)">
+            <option data-input="" selected value="">None</option>
+            <option data-input="text">Bearer</option>
+            <option data-input="text">Token</option>
+            <option data-input="password">Basic</option>
+            <!--option>Digest</option>
+            <option>Negotiate</option>
+            <option>HOBA</option>
+            <option>Mutual</option>
+            <option>VAPID</option>
+            <option>SCRAM</option>
+            <option>AWS4-HMAC-SHA256</option -->
+        </select>
+        <div hidden class="auth_field" data-input="text"><input name="token" type="text"/></div>
+        <div hidden class="auth_field" data-input="password"><input name="username" type="text" placeholder="username"/><input name="password" type="password" placeholder="password"/></div>
+        <div hidden class="auth_field"></div>
+        <div hidden class="auth_field"></div>
+        <div hidden class="auth_field"></div>
+        <div hidden class="auth_field"></div>
+        <div hidden class="auth_field"></div>
+        <div hidden class="auth_field"></div>
+        <div hidden class="auth_field"></div>
+        </td>
+    </tr>
+    <tr>
         <td>Accept</td>
-        <td><select id="content_type" onchange="document.getElementById('json_fields').hidden=this.value==='text/plain'">
-            <option value="application/json">JSON</option>
-            <option value="text/plain">Text</option>
-        </select></td>
+        <td><input name="content_type" list="mime-types" value="application/json" onfocus="this.placeholder=this.value; this.value=''" onblur="this.value=this.value==='' ? this.placeholder : this.value" onchange="document.getElementById('json_fields').hidden=this.value==='text/plain'"/></td>
     </tr>
     <tr name="header">
-        <td name="header_key" contenteditable="true"/>
-        <td name="header_value" contenteditable="true"/>
+        <td name="header_key" contenteditable="true"></td>
+        <td name="header_value" contenteditable="true"></td>
+        <td><button onclick="this.parentNode.parentNode.parentNode.removeChild(this.parentNode.parentNode)">-</button></td>
     </tr>
     </tbody>
     <tfoot>
     <tr><td><button onclick="add_row(headertemplate,'header')">+</button></td></tr>
+    </tfoot>
+</table>
+<table>
+    <thead>
+    <tr>
+        <td>Cookie Name</td>
+        <td>Cookie Value</td>
+    </tr>
+    </thead>
+    <tbody id="cookie">
+    <tr name="cookie">
+        <td name="cookie_key" contenteditable="true"></td>
+        <td name="cookie_value" contenteditable="true"></td>
+        <td><button onclick="this.parentNode.parentNode.parentNode.removeChild(this.parentNode.parentNode)">-</button></td>
+    </tr>
+    </tbody>
+    <tfoot>
+    <tr><td><button onclick="add_row(cookietemplate,'cookie')">+</button></td></tr>
     </tfoot>
 </table>
 <div id="response"></div>
@@ -71,8 +126,9 @@
     </thead>
     <tbody id="resp_col">
     <tr name="resp_col">
-        <td name="colname" contenteditable="true"/>
-        <td name="colget" contenteditable="true"/>
+        <td name="colname" contenteditable="true"></td>
+        <td name="colget" contenteditable="true"></td>
+        <td><button onclick="this.parentNode.parentNode.parentNode.removeChild(this.parentNode.parentNode)">-</button></td>
     </tr>
     </tbody>
     <tfoot>
@@ -90,11 +146,11 @@
 <script type="application/javascript">
     const respcoltemplate = document.getElementsByName("resp_col").item(0).cloneNode(true);
     const headertemplate = document.getElementsByName("header").item(0).cloneNode(true);
+    const cookietemplate = document.getElementsByName("cookie").item(0).cloneNode(true);
     let table;
-// Add a row to the table that's specified by "name". The template is a copy of the original row node/element.
+    // Add a row to the table that's specified by "name". The template is a copy of the original row node/element.
     function add_row(template,name) {
-        const nodelist = document.getElementsByName(name);
-        nodelist.item(nodelist.length - 1).after(template.cloneNode(true));
+        return document.getElementById(name).appendChild(template.cloneNode(true));
     }
 
     /**
@@ -117,10 +173,21 @@
      */
     async function makerequest(method, header, body, url) {
         let init;
-        if (method == 'GET' || method == 'HEAD') init = {method: method, headers: header};
+        if (method === 'GET' || method === 'HEAD') init = {method: method, headers: header};
         else init = {method: method, body: body, headers: header};
-        if (header.get('Accept')==='application/json') return await (await fetch(url, init)).json(); // TODO add condition based on Content-Type header
-        else return await (await fetch(url, init)).text();
+        const response = await fetch(url, init)
+        // Handle response headers
+        let cookies = response.headers.get('Set-Cookie')
+        if (cookies) {
+            for (const cookie of cookies.split(',')) {
+                const [_, name, value] = cookie.match(/([^=]+)="?([^;"]+)/)
+                const row = add_row(cookietemplate,'cookie')
+                row.cells[0].innerText = name
+                row.cells[1].innerText = value
+            }
+        }
+        if (header.get('Accept')==='application/json') return await response.json(); // TODO add condition based on Content-Type header
+        else return await response.text();
     }
 
     /**
@@ -135,7 +202,31 @@
         const header = new Headers();
         const is_json = document.getElementById("content_type").value==='application/json';
         document.getElementById("response").innerText="";
-        // TODO header.set('Authorization','')
+        {  // Set Authorisation header
+            const auth_scheme = document.getElementById("auth_scheme")
+            const auth_scheme_input = auth_scheme.selectedOptions[0].dataset.input
+            let auth = auth_scheme.value + " "
+            if (auth_scheme_input) {
+                switch (auth_scheme_input) {
+                    case 'text':
+                        auth += document.getElementsByName("token")[0].value
+                        break
+                    case 'password':
+                        auth += btoa(document.getElementsByName("username")[0].value + ":" + document.getElementsByName("password")[0].value)
+                }
+                header.set('Authorization', auth)
+            }
+        }
+        { // Set Cookie header
+            let cookies = ""
+            for (const row of document.getElementById("cookie").rows) {
+                //if both cells aren't empty, add items to Headers, first cell is key : second cell is value
+                if (row.cells[0].innerText && row.cells[1].innerText) {
+                    cookies += row.cells[0].innerText + "=" + row.cells[1].innerText + ";"
+                }
+            }
+            if (cookies) header.set("Cookie", cookies)
+        }
         header.set('Content-Type', 'application/json'); // TODO allows users to specify the type of content in the request body
         header.set('Accept', document.getElementById("content_type").value);
         //gets header table rows and iterates through them
@@ -204,6 +295,7 @@
                 });
             }
             else document.getElementById("response").innerText=data;
+
         }
     }
 
